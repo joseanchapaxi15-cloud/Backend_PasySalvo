@@ -1,0 +1,470 @@
+<div class="app-shell">
+  <header class="topbar">
+    <a class="brand" href="#inicio" aria-label="Sistema de Paz y Salvo">
+      <span class="brand-mark">PS</span>
+      <span><strong>Paz y Salvo</strong><small>Gestión institucional</small></span>
+    </a>
+    <div class="topbar-meta" *ngIf="auth.user() as user">
+      <span class="environment-tag">Entorno de prácticas</span>
+      <span class="user-chip"><span class="user-avatar">{{ user.fullName.charAt(0) }}</span> {{ user.fullName }}</span>
+      <button class="button button-secondary" type="button" (click)="logout()">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <main class="page-content login-page" *ngIf="!auth.isAuthenticated()">
+    <section class="panel login-card">
+      <p class="eyebrow">ACCESO INSTITUCIONAL</p>
+      <h1>Iniciar sesión</h1>
+      <p class="muted">Ingresa con la cuenta creada por Recursos Humanos.</p>
+      <form class="create-form" (ngSubmit)="login()">
+        <label>Usuario<input class="control" name="loginUsername" autocomplete="username" required [(ngModel)]="loginUsername"></label>
+        <label>Contraseña<div class="password-input"><input class="control" name="loginPassword" [type]="showLoginPassword() ? 'text' : 'password'" autocomplete="current-password" required [(ngModel)]="loginPassword"><button class="password-toggle" type="button" (click)="showLoginPassword.update(value => !value)">{{ showLoginPassword() ? 'Ocultar' : 'Mostrar' }}</button></div></label>
+        <p class="notice-error" *ngIf="loginError()">{{ loginError() }}</p>
+        <button class="button button-primary" type="submit" [disabled]="saving()">{{ saving() ? 'Ingresando…' : 'Ingresar' }}</button>
+      </form>
+    </section>
+  </main>
+
+  <main class="page-content" id="inicio" *ngIf="auth.isAuthenticated()">
+    <section class="welcome-row">
+      <div>
+        <p class="eyebrow">DIRECCIÓN DE ADMINISTRACIÓN DE RECURSOS HUMANOS</p>
+        <h1>Solicitudes de paz y salvo</h1>
+        <p class="page-subtitle">{{ auth.user()?.role === 'SOLICITANTE' ? 'Consulta el avance de tu solicitud de paz y salvo.' : auth.isHumanResources() ? 'Administra solicitudes y define, al crear cada usuario, qué preguntas responderá en su área.' : 'Consulta y completa únicamente las preguntas asignadas a tu cuenta.' }}</p>
+      </div>
+      <div class="welcome-actions" *ngIf="auth.user()?.role !== 'SOLICITANTE'">
+        <button *ngIf="auth.isHumanResources()" class="button button-secondary" type="button" (click)="downloadReport()">↓ Exportar Excel (CSV)</button>
+        <button *ngIf="auth.isHumanResources()" class="button button-secondary" type="button" (click)="openUsers()">Administrar usuarios</button>
+        <button *ngIf="auth.isHumanResources()" class="button button-primary" type="button" (click)="openCreateRequest()">
+          <span class="plus-icon">+</span> Nueva solicitud
+        </button>
+      </div>
+    </section>
+
+    <div class="notice notice-warning" *ngIf="auth.user()?.role !== 'SOLICITANTE'">
+      <span class="notice-icon">i</span>
+      <span>FirmaEC: descarga el apartado, fírmalo en la aplicación FirmaEC y carga aquí el PDF resultante. La validación criptográfica automática requiere la integración institucional.</span>
+    </div>
+
+    <div class="notice notice-error" *ngIf="errorMessage()">
+      <span>{{ errorMessage() }}</span><button type="button" (click)="errorMessage.set('')">Cerrar</button>
+    </div>
+    <div class="notice notice-success" *ngIf="successMessage()">
+      <span>{{ successMessage() }}</span><button type="button" (click)="successMessage.set('')">Cerrar</button>
+    </div>
+
+    <section class="panel tracking-panel" *ngIf="auth.user()?.role === 'SOLICITANTE' && selectedRequest() as trackingRequest">
+      <p class="eyebrow">SEGUIMIENTO DE SOLICITUD</p><h2>Hola, {{ trackingRequest.fullName }}</h2>
+      <p class="muted">Solicitud #{{ trackingRequest.id }} · <strong>{{ statusLabel(trackingRequest.status) }}</strong></p>
+      <div class="tracking-steps"><div class="tracking-step" *ngFor="let section of trackingRequest.sections" [class.tracking-step-done]="section.status === 'COMPLETADA'" [class.tracking-step-active]="section.status === 'EN_CURSO'">
+        <span>{{ areaName(section.area) }}</span><strong>{{ section.status === 'COMPLETADA' ? 'Completada' : section.status === 'EN_CURSO' ? 'En curso' : 'Pendiente' }}</strong>
+      </div></div>
+      <p class="muted">Esta cuenta permite consultar el avance. Para actualizar datos, comunícate con Talento Humano.</p>
+    </section>
+    <section class="panel tracking-panel" *ngIf="auth.user()?.role === 'SOLICITANTE' && !loading() && !selectedRequest()">
+      <p class="eyebrow">SEGUIMIENTO DE SOLICITUD</p>
+      <h2>No hay una solicitud vinculada</h2>
+      <p class="muted">Comunícate con Talento Humano para verificar las credenciales de seguimiento que recibiste.</p>
+    </section>
+
+    <section class="summary-grid" aria-label="Resumen" *ngIf="auth.user()?.role !== 'SOLICITANTE'">
+      <article class="summary-card">
+        <span class="summary-icon icon-blue">▤</span>
+        <span class="summary-label">Solicitudes registradas</span>
+        <strong>{{ requests().length }}</strong>
+      </article>
+      <article class="summary-card">
+        <span class="summary-icon icon-amber">◷</span>
+        <span class="summary-label">En proceso</span>
+        <strong>{{ countByStatus('EN_PROCESO') }}</strong>
+      </article>
+      <article class="summary-card">
+        <span class="summary-icon icon-green">✓</span>
+        <span class="summary-label">Pendientes de firma</span>
+        <strong>{{ countByStatus('PENDIENTE_FIRMA_EXFUNCIONARIO') }}</strong>
+      </article>
+      <article class="summary-card">
+        <span class="summary-icon icon-violet">◉</span>
+        <span class="summary-label">Aprobadas</span>
+        <strong>{{ countByStatus('APROBADO') }}</strong>
+      </article>
+    </section>
+
+    <section class="workspace-grid" *ngIf="auth.user()?.role !== 'SOLICITANTE'">
+      <aside class="inbox-panel panel">
+        <div class="panel-heading inbox-heading">
+          <div><h2>Bandeja</h2><span class="muted">{{ filteredRequests().length }} solicitudes</span></div>
+          <span class="inbox-count">{{ filteredRequests().length }}</span>
+        </div>
+
+        <label *ngIf="auth.isHumanResources()" class="field-label" for="areaFilter">Área responsable</label>
+        <select *ngIf="auth.isHumanResources()" id="areaFilter" class="control" [ngModel]="areaFilter()" (ngModelChange)="areaFilter.set($event)">
+          <option value="TODAS">Todas las áreas</option>
+          <option value="DIRECCION_UNIDAD">Dirección / unidad</option>
+          <option value="GESTION_ADMINISTRATIVA">Gestión administrativa</option>
+          <option value="TIC">Tecnologías de la información</option>
+          <option value="GESTION_FINANCIERA">Gestión financiera</option>
+          <option value="SEGURIDAD_INFORMACION">Seguridad de la información</option>
+          <option value="RECURSOS_HUMANOS">Recursos humanos</option>
+          <option value="RECEPCION_DOCUMENTOS">Recepción de documentos</option>
+          <option value="FINAL">Etapa final</option>
+        </select>
+        <label class="search-box">
+          <span aria-hidden="true">⌕</span>
+          <input type="search" placeholder="Buscar por nombre o cédula" [ngModel]="searchText()" (ngModelChange)="searchText.set($event)">
+        </label>
+
+        <div class="request-list" *ngIf="!loading(); else loadingList">
+          <button class="request-item" type="button" *ngFor="let request of filteredRequests()"
+                  [class.selected]="selectedId() === request.id" (click)="selectRequest(request)">
+              <span class="request-avatar">{{ request.fullName.charAt(0) }}</span>
+            <span class="request-item-body">
+              <strong>{{ request.fullName }}</strong>
+              <span>{{ request.identification }}</span>
+              <span class="request-item-bottom">
+                <span class="mini-status" [attr.data-status]="request.status"></span>
+                {{ activeAreaLabel(request) }}
+              </span>
+            </span>
+            <span class="item-date">{{ formatDate(request.createdAt) }}</span>
+          </button>
+
+          <div class="empty-state" *ngIf="filteredRequests().length === 0">
+            <span class="empty-icon">▤</span>
+            <strong>No hay solicitudes en esta bandeja</strong>
+            <p>Cambia el filtro o crea una solicitud nueva.</p>
+          </div>
+        </div>
+        <ng-template #loadingList><div class="loading-state">Cargando solicitudes…</div></ng-template>
+      </aside>
+
+      <section class="detail-panel panel" *ngIf="selectedRequest() as request; else noSelection">
+        <div class="detail-header">
+          <div class="detail-title-group">
+            <span class="large-avatar">{{ request.fullName.charAt(0) }}</span>
+            <div>
+              <div class="title-with-badge"><h2>{{ request.fullName }}</h2><span class="status-badge" [attr.data-status]="request.status">{{ statusLabel(request.status) }}</span></div>
+              <p class="muted">Solicitud #{{ request.id }} <span class="separator-dot">·</span> Creada {{ formatDate(request.createdAt) }}</p>
+            </div>
+          </div>
+          <div class="detail-actions" *ngIf="auth.isHumanResources()">
+            <button class="icon-button" type="button" title="Ver historial de auditoría" (click)="loadAudit()">◷</button>
+            <button class="button button-danger" type="button" [disabled]="saving()" (click)="deleteRequest()">Eliminar solicitud</button>
+          </div>
+        </div>
+
+        <div class="progress-card" *ngIf="auth.isHumanResources()">
+          <div class="progress-copy"><strong>Avance del proceso</strong><span>{{ completedSections }} de {{ request.sections.length }} áreas completadas</span></div>
+          <strong class="progress-value">{{ progressPercent }}%</strong>
+          <div class="progress-track"><span [style.width.%]="progressPercent"></span></div>
+        </div>
+
+        <section class="panel assignment-panel" *ngIf="auth.isHumanResources()">
+          <h3>Distribución de preguntas</h3>
+          <p class="muted">Esta distribución viene de las cuentas configuradas por Talento Humano. Cada responsable firma en un solo PDF sus preguntas.</p>
+          <div class="question-assignment-area" *ngFor="let item of request.sections">
+            <h4>{{ areaName(item.area) }}</h4>
+            <div class="question-assignment-row" *ngFor="let answer of item.answers">
+              <span class="question-assignment-label">{{ answer.questionLabel }}</span>
+              <span>{{ answer.assignedUserName || item.assignedUserName || 'Sin responsable configurado' }}</span>
+              <button *ngIf="answer.signedDocumentSha256 && answer.assignedUserId" class="document-link" type="button" (click)="downloadSignedSection(item, answer.assignedUserId)">Firmada por {{ answer.signerName }} · SHA-256 {{ answer.signedDocumentSha256.slice(0, 12) }}… ↓</button>
+            </div>
+          </div>
+        </section>
+
+        <div class="stepper" aria-label="Etapas del trámite" *ngIf="auth.isHumanResources()">
+          <div class="step" *ngFor="let section of request.sections" [class.step-done]="section.status === 'COMPLETADA'" [class.step-active]="section.status === 'EN_CURSO'">
+            <span class="step-dot">{{ section.status === 'COMPLETADA' ? '✓' : section.sequenceNumber + 1 }}</span>
+            <span class="step-name">{{ areaName(section.area) }}</span>
+          </div>
+        </div>
+
+        <div class="personal-card">
+          <div><span>Identificación</span><strong>{{ request.identification }}</strong></div>
+          <div><span>Correo electrónico</span><strong>{{ request.email }}</strong></div>
+          <div><span>Cargo</span><strong>{{ request.jobTitle || 'No registrado' }}</strong></div>
+          <div><span>Unidad</span><strong>{{ request.workUnit || 'No registrada' }}</strong></div>
+        </div>
+
+        <ng-container *ngIf="activeSection as section; else laterStage">
+          <ng-container *ngIf="!auth.isHumanResources(); else hrActiveStage">
+          <section class="section-work">
+            <div class="section-heading-row">
+              <div><p class="eyebrow">ETAPA {{ section.sequenceNumber + 1 }} DE {{ request.sections.length }}</p>
+                <h3>{{ areaName(section.area) }}</h3></div>
+              <span class="active-tag"><span></span> En curso</span>
+            </div>
+            <p class="helper-text">Responde únicamente las preguntas asignadas a tu cuenta. Luego genera un PDF con tu grupo de preguntas, fírmalo con FirmaEC y cárgalo. El área avanza cuando todos los responsables hayan firmado sus preguntas.</p>
+
+            <section class="question-row work-details-row" *ngIf="section.area === 'DIRECCION_UNIDAD'">
+              <div class="question-content"><strong>Datos laborales del servidor (completa la unidad asignada)</strong>
+                <p class="notice notice-error" *ngIf="!auth.user()?.workUnit && !request.workUnit">La cuenta de director no tiene una unidad configurada. Talento Humano debe asignarle una unidad desde Administración de usuarios.</p>
+                <div class="form-two-columns">
+                  <label>Lugar de trabajo<select class="control" name="workplaceValue" required [ngModel]="request.workplace || ''" (ngModelChange)="workplace = $event"><option value="">Selecciona lugar</option><option *ngFor="let place of workplaceTypes" [value]="place">{{ place }}</option></select></label>
+                  <label>Grupo ocupacional<input class="control" name="occupationalGroupValue" required [ngModel]="request.occupationalGroup || ''" (ngModelChange)="occupationalGroup = $event"></label>
+                  <label>Dirección / unidad<select class="control" name="workUnitValue" required [ngModel]="request.workUnit || auth.user()?.workUnit || ''" (ngModelChange)="workUnit = $event"><option [value]="auth.user()?.workUnit || ''">{{ auth.user()?.workUnit || 'Unidad asignada al director' }}</option></select></label>
+                  <label>Cargo desempeñado<input class="control" name="jobTitleValue" required [ngModel]="request.jobTitle || ''" (ngModelChange)="jobTitle = $event"></label>
+                </div>
+                <button class="button button-secondary" type="button" [disabled]="saving() || !(workplace || request.workplace) || !(occupationalGroup.trim() || request.occupationalGroup) || !(workUnit.trim() || request.workUnit || auth.user()?.workUnit) || !(jobTitle.trim() || request.jobTitle)" (click)="saveWorkDetails()">Guardar datos laborales</button>
+              </div>
+            </section>
+
+            <div class="question-list">
+              <article class="question-row" *ngFor="let answer of section.answers; let index = index">
+                <div class="question-number">{{ index + 1 }}</div>
+                <div class="question-content">
+                  <strong>{{ answer.questionLabel }}</strong>
+                  <div class="answer-controls">
+                    <label class="radio-choice" [class.choice-selected]="answer.answerValue === 'SI'">
+                      <input type="radio" [name]="answer.questionKey" value="SI" [(ngModel)]="answer.answerValue" (ngModelChange)="onAnswerValueChange(answer, $event)" [disabled]="!!answer.signedAt || (section.area === 'DIRECCION_UNIDAD' && !hasSavedWorkDetails(request))"> Sí
+                    </label>
+                    <label class="radio-choice" [class.choice-selected]="answer.answerValue === 'NO'">
+                      <input type="radio" [name]="answer.questionKey" value="NO" [(ngModel)]="answer.answerValue" (ngModelChange)="onAnswerValueChange(answer, $event)" [disabled]="!!answer.signedAt || (section.area === 'DIRECCION_UNIDAD' && !hasSavedWorkDetails(request))"> No
+                    </label>
+                  </div>
+                  <div class="answer-extra">
+                    <ng-container *ngIf="answer.writingFields.length; else genericAnswerDetail">
+                      <label class="answer-writing-field" *ngFor="let field of answer.writingFields">
+                        <span>{{ field }}</span>
+                        <input *ngIf="field.toLowerCase().includes('valor a descontar')" class="control amount-control" type="number" min="0" step="0.01" required placeholder="0.00" [(ngModel)]="answer.amount" [disabled]="!!answer.signedAt || (section.area === 'DIRECCION_UNIDAD' && !hasSavedWorkDetails(request))">
+                        <input *ngIf="!field.toLowerCase().includes('valor a descontar')" class="control" type="text" required maxlength="500" placeholder="Escribe un dato o No aplica" [ngModel]="answerFieldValue(answer, field)" (ngModelChange)="setAnswerField(answer, field, $event)" [disabled]="!!answer.signedAt || (section.area === 'DIRECCION_UNIDAD' && !hasSavedWorkDetails(request))">
+                      </label>
+                    </ng-container>
+                    <ng-template #genericAnswerDetail><input class="control" type="text" required maxlength="500" placeholder="Detalle u observación" [(ngModel)]="answer.detail" [disabled]="!!answer.signedAt || (section.area === 'DIRECCION_UNIDAD' && !hasSavedWorkDetails(request))"></ng-template>
+                    <span class="signed-question-tag" *ngIf="answer.signedAt">Firmada por {{ answer.signerName }} · {{ formatDate(answer.signedAt) }}</span>
+                  </div>
+                </div>
+              </article>
+            </div>
+
+            <div class="signature-box" *ngIf="hasUnsignedAnswers(section)">
+              <div class="signature-intro"><span class="signature-symbol">✎</span><div><strong>Una sola firma para todas tus preguntas</strong><p>Se genera un PDF único con tus preguntas pendientes. Firma ese documento una vez en FirmaEC; esa firma cubre todas las preguntas incluidas.</p></div></div>
+              <p class="signature-note">Firmante asignado: {{ auth.user()?.fullName }} ({{ auth.user()?.email }}). Descarga el PDF del paso 1, fírmalo en FirmaEC y carga aquí el archivo nuevo que termina en <strong>-signed.pdf</strong>. No cargues el original, una impresión escaneada ni un PDF modificado después de firmarlo. <a href="https://www.firmadigital.gob.ec/descargar-firmaec/" target="_blank" rel="noopener">Instalar o descargar FirmaEC</a></p>
+            </div>
+
+            <div class="action-row">
+              <span class="helper-text">La siguiente área se habilita cuando todas las preguntas del departamento estén firmadas.</span>
+              <div class="action-buttons" *ngIf="hasUnsignedAnswers(section)">
+                <button class="button button-secondary" type="button" [disabled]="saving() || (section.area === 'DIRECCION_UNIDAD' && !hasSavedWorkDetails(request))" (click)="saveAnswers()">Guardar respuestas</button>
+                <button class="button button-primary" type="button" [disabled]="saving() || (section.area === 'DIRECCION_UNIDAD' && !hasSavedWorkDetails(request))" (click)="printSectionForFirmaEc()">{{ saving() ? 'Preparando…' : '1. Generar PDF para FirmaEC' }}</button>
+                <label class="upload-control"><span>{{ saving() ? 'Procesando…' : '2. Cargar PDF firmado con FirmaEC' }}</span>
+                  <input type="file" accept="application/pdf,.pdf" [disabled]="saving()" (change)="onSignedSectionFileChange($event)"></label>
+              </div>
+            </div>
+            <div class="notice notice-success" *ngIf="!hasUnsignedAnswers(section)">
+              Tus preguntas ya están firmadas. El área avanzará cuando los demás responsables terminen las suyas.
+            </div>
+          </section>
+          </ng-container>
+          <ng-template #hrActiveStage><div class="empty-state"><strong>El área está en curso</strong><p>El responsable asignado debe iniciar sesión para responder y confirmar este apartado.</p></div></ng-template>
+        </ng-container>
+
+        <ng-template #laterStage>
+          <section class="next-stage-card" *ngIf="!auth.isHumanResources() && request.status === 'EN_PROCESO'; else hrOrFinalStage">
+            <span class="stage-icon">◷</span><div><h3>Aún no es tu turno</h3><p>Este apartado aparecerá habilitado cuando las áreas anteriores completen y confirmen sus respuestas.</p></div>
+          </section>
+          <ng-template #hrOrFinalStage>
+          <section class="next-stage-card" *ngIf="request.status === 'PENDIENTE_FIRMA_EXFUNCIONARIO'; else reviewStage">
+            <span class="stage-icon">✓</span><div><h3>Las áreas completaron sus apartados</h3>
+              <p>Los responsables completaron y firmaron electrónicamente sus apartados. Ahora genera el documento consolidado para la firma del servidor saliente.</p></div>
+            <button class="button button-secondary" type="button" (click)="printDocument()">Descargar PDF</button>
+            <label class="upload-control"><span>{{ saving() ? 'Cargando…' : 'Cargar PDF firmado' }}</span>
+              <input type="file" accept="application/pdf,.pdf" [disabled]="saving()" (change)="onSignedFileChange($event)"></label>
+            <p class="signature-note full-width">El sistema conserva cada PDF firmado de área con su SHA-256 y bloquea su reemplazo. Esta versión todavía no verifica automáticamente la vigencia del certificado.</p>
+          </section>
+
+          <ng-template #reviewStage>
+            <section class="next-stage-card" *ngIf="request.status === 'EN_REVISION'; else closedStage">
+              <span class="stage-icon stage-review">◷</span><div><h3>Documento recibido para revisión</h3>
+                <p>Hash SHA-256: <code>{{ request.signedDocumentSha256 }}</code></p>
+                <button class="document-link" type="button" (click)="downloadSignedDocument()">Descargar PDF firmado ↗</button></div>
+              <div class="final-controls">
+                <label>Decisión<select class="control" [ngModel]="finalStatus()" (ngModelChange)="finalStatus.set($event)">
+                  <option value="APROBADO">Aprobado</option><option value="NEGADO">Negado</option>
+                </select></label>
+                <label>Observación<input class="control" type="text" [ngModel]="finalObservation()" (ngModelChange)="finalObservation.set($event)" placeholder="Obligatoria si se niega"></label>
+                <button class="button button-primary" type="button" [disabled]="saving()" (click)="setFinalStatus()">Registrar decisión</button>
+              </div>
+            </section>
+            <ng-template #closedStage>
+              <section class="closed-card"><span class="stage-icon">{{ request.status === 'APROBADO' ? '✓' : '!' }}</span>
+                <div><h3>Trámite {{ statusLabel(request.status).toLowerCase() }}</h3>
+                  <p *ngIf="request.signedDocumentSha256">El PDF firmado permanece asociado a esta solicitud.</p></div>
+                <button *ngIf="request.signedDocumentSha256" class="button button-secondary" type="button" (click)="downloadSignedDocument()">Descargar PDF firmado</button>
+              </section>
+            </ng-template>
+          </ng-template>
+          </ng-template>
+        </ng-template>
+
+        <section class="section-history" *ngIf="hasCompletedSections(request)">
+          <h3>Áreas completadas</h3>
+          <div class="history-row" *ngFor="let section of request.sections" [hidden]="section.status !== 'COMPLETADA'">
+            <span class="history-check">✓</span><strong>{{ areaName(section.area) }}</strong>
+            <span>Firmas registradas: {{ sectionSigners(section) || 'ver responsables por pregunta' }}</span>
+            <time>{{ section.signedAt ? formatDate(section.signedAt) : '' }}</time>
+          </div>
+        </section>
+      </section>
+
+      <ng-template #noSelection>
+        <section class="detail-panel panel blank-detail">
+          <span class="empty-icon">▤</span><h2>Selecciona una solicitud</h2>
+          <p>Elige un registro de la bandeja para revisar sus datos y completar el apartado del área activa.</p>
+          <button *ngIf="auth.isHumanResources()" class="button button-primary" type="button" (click)="openCreateRequest()">Crear solicitud</button>
+        </section>
+      </ng-template>
+    </section>
+  </main>
+
+  <div class="modal-backdrop" *ngIf="showUsers()">
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="usersTitle" (click)="$event.stopPropagation()">
+      <div class="modal-heading"><div><p class="eyebrow">ADMINISTRACIÓN</p><h2 id="usersTitle">Usuarios del sistema</h2></div>
+        <button class="icon-button" type="button" aria-label="Cerrar" (click)="showUsers.set(false)">×</button></div>
+      <form class="create-form" *ngIf="!editingUser()" #newUserForm="ngForm" (ngSubmit)="createUser()">
+        <label>Nombre completo<input class="control" name="newUserFullName" required maxlength="100" [(ngModel)]="newUserFullName"></label>
+        <div class="form-two-columns"><label>Usuario<input class="control" name="newUserUsername" required minlength="3" maxlength="60" pattern="[a-zA-Z0-9._-]{3,60}" [(ngModel)]="newUserUsername"><small>Usa de 3 a 60 caracteres: letras, números, punto, guion o guion bajo.</small></label>
+          <label>Correo institucional<input class="control" name="newUserEmail" type="email" required maxlength="160" [(ngModel)]="newUserEmail"></label></div>
+        <label>Contraseña inicial (mínimo 12 caracteres)<div class="password-input"><input class="control" name="newUserPassword" [type]="showNewUserPassword() ? 'text' : 'password'" minlength="12" maxlength="72" required [(ngModel)]="newUserPassword"><button class="password-toggle" type="button" (click)="showNewUserPassword.update(value => !value)">{{ showNewUserPassword() ? 'Ocultar' : 'Mostrar' }}</button></div></label>
+        <label>Tipo de cuenta<select class="control" name="newUserRole" [ngModel]="newUserRole" (ngModelChange)="onNewUserRoleChange($event)"><option value="DIRECTOR_UNIDAD">Director de unidad</option><option value="RESPONSABLE_AREA">Responsable de área</option><option value="TALENTO_HUMANO">Talento Humano</option></select></label>
+          <label *ngIf="newUserRole === 'RESPONSABLE_AREA'">Área asignada<select class="control" name="newUserArea" required [ngModel]="newUserArea" (ngModelChange)="onNewUserAreaChange($event)">
+          <option value="">Selecciona área</option><option *ngFor="let area of areaNames | keyvalue" [hidden]="area.key === 'DIRECCION_UNIDAD'" [value]="area.key">{{ area.value }}</option>
+        </select></label>
+        <label *ngIf="newUserRole === 'DIRECTOR_UNIDAD'">Dirección / unidad que dirige
+          <select class="control" name="newDirectorUnitChoice" required [ngModel]="newDirectorUnitChoice" (ngModelChange)="onNewDirectorUnitChange($event)">
+            <option value="">Selecciona un área</option>
+            <option *ngFor="let area of directorAreaOptions" [value]="area">{{ area }}</option>
+          </select>
+          <small>Talento Humano podrá seleccionar este director según el área del servidor saliente.</small>
+        </label>
+        <fieldset class="question-picker" *ngIf="newUserRole === 'RESPONSABLE_AREA' && questionOptions().length">
+          <legend>Preguntas asignadas a este usuario</legend>
+          <button class="button button-secondary" type="button" (click)="assignAllAvailableQuestions()">Seleccionar todas las preguntas disponibles</button>
+          <label class="question-option" *ngFor="let option of questionOptions()">
+            <input type="checkbox" [checked]="newUserQuestionKeys.includes(option.key)" [disabled]="option.assignedUserId != null" (change)="toggleQuestionKey(option.key, $event)">
+            <span>{{ option.label }} <small *ngIf="option.assignedUserName">(asignada a {{ option.assignedUserName }})</small><small class="field-hint" *ngIf="option.writingFields.length">Incluye campos escritos: {{ option.writingFields.join(', ') }}</small></span>
+          </label>
+          <small>Las preguntas seleccionadas se asignarán automáticamente a este usuario en las solicitudes nuevas.</small>
+        </fieldset>
+        <button class="button button-primary" type="submit" [disabled]="saving() || newUserForm.invalid || (newUserRole === 'RESPONSABLE_AREA' && newUserQuestionKeys.length === 0)">{{ saving() ? 'Creando…' : 'Crear cuenta' }}</button>
+      </form>
+      <form class="create-form" (ngSubmit)="$event.preventDefault(); addCustomQuestion()">
+        <h3>Agregar pregunta a un área</h3>
+        <p class="muted">La nueva pregunta aparecerá en las solicitudes que se creen después de agregarla.</p>
+        <label>Área<select class="control" name="customQuestionArea" required [(ngModel)]="customQuestionArea"><option value="">Selecciona área</option><option *ngFor="let area of areaNames | keyvalue" [value]="area.key">{{ area.value }}</option></select></label>
+        <label>Pregunta<input class="control" name="customQuestionLabel" required maxlength="1000" [(ngModel)]="customQuestionLabel" placeholder="Escribe la pregunta"></label>
+        <button class="button button-secondary" type="submit" [disabled]="saving() || !customQuestionArea || !customQuestionLabel.trim()">Agregar pregunta</button>
+      </form>
+      <form class="create-form question-edit-form" *ngIf="editingUser() as user" (ngSubmit)="saveUserQuestions()">
+        <h3>Preguntas de {{ user.fullName }}</h3>
+        <p class="muted">Área: {{ areaName(user.area || '') }}{{ user.workUnit ? ' · Unidad: ' + user.workUnit : '' }}. El cambio se aplicará a las solicitudes nuevas.</p>
+        <p class="muted" *ngIf="user.area === 'DIRECCION_UNIDAD'">Las preguntas de Dirección / unidad son obligatorias y siempre se asignan automáticamente a este director. Aquí puedes asignar preguntas adicionales de {{ areaName(newUserWorkUnit ? (operationalAreaForWorkUnit(newUserWorkUnit) || '') : '') }}.</p>
+        <fieldset class="question-picker">
+          <legend>Preguntas asignadas</legend>
+          <ng-container *ngFor="let option of questionOptions()">
+            <label class="question-option" *ngIf="user.area !== 'DIRECCION_UNIDAD' || !isDirectorUnitQuestion(option.key)">
+              <input type="checkbox" [checked]="newUserQuestionKeys.includes(option.key)" [disabled]="option.assignedUserId != null && option.assignedUserId !== user.id" (change)="toggleQuestionKey(option.key, $event)">
+              <span>{{ option.label }} <small *ngIf="option.assignedUserName && option.assignedUserId !== user.id">(asignada a {{ option.assignedUserName }})</small><small class="field-hint" *ngIf="option.writingFields.length">Incluye campos escritos: {{ option.writingFields.join(', ') }}</small></span>
+            </label>
+          </ng-container>
+        </fieldset>
+        <div class="modal-actions"><button class="button button-secondary" type="button" (click)="editingUser.set(null); newUserQuestionKeys = []">Cancelar</button>
+          <button class="button button-primary" type="submit" [disabled]="saving() || (user.area !== 'DIRECCION_UNIDAD' && newUserQuestionKeys.length === 0)">Guardar distribución</button></div>
+      </form>
+      <form class="create-form question-edit-form" *ngIf="profileEditingUser() as user" #editUserForm="ngForm" (ngSubmit)="saveUserProfile()">
+        <h3>Editar cuenta: {{ user.fullName }}</h3>
+        <label>Nombre completo<input class="control" name="editUserFullName" required [(ngModel)]="editFullName"></label>
+        <div class="form-two-columns"><label>Usuario<input class="control" name="editUserUsername" required minlength="3" [(ngModel)]="editUsername"></label>
+          <label>Correo institucional<input class="control" name="editUserEmail" type="email" required [(ngModel)]="editEmail"></label></div>
+        <label *ngIf="user.role === 'RESPONSABLE_AREA'">Tipo de cuenta<select class="control" name="editAccountType" required [ngModel]="editAccountType" (ngModelChange)="onEditAccountTypeChange($event)"><option value="DIRECTOR_UNIDAD">Director de unidad</option><option value="RESPONSABLE_AREA">Responsable de área</option></select></label>
+        <label *ngIf="user.role === 'RESPONSABLE_AREA' && editAccountType === 'RESPONSABLE_AREA'">Área responsable<select class="control" name="editAccountArea" required [(ngModel)]="editAccountArea"><option value="">Selecciona área</option><option *ngFor="let area of areaNames | keyvalue" [hidden]="area.key === 'DIRECCION_UNIDAD'" [value]="area.key">{{ area.value }}</option></select><small>Si cambias el área, deberás asignarle sus preguntas después de guardar.</small></label>
+        <label *ngIf="user.role === 'RESPONSABLE_AREA' && editAccountType === 'DIRECTOR_UNIDAD'">Dirección / unidad que dirige
+          <select class="control" name="editDirectorUnitChoice" required [ngModel]="editDirectorUnitChoice" (ngModelChange)="onEditDirectorUnitChange($event)">
+            <option value="">Selecciona un área</option>
+            <option *ngFor="let area of directorAreaOptions" [value]="area">{{ area }}</option>
+          </select>
+        </label>
+        <div class="modal-actions"><button class="button button-secondary" type="button" (click)="profileEditingUser.set(null)">Cancelar</button>
+          <button class="button button-primary" type="submit" [disabled]="saving() || editUserForm.invalid">Guardar datos</button></div>
+      </form>
+      <form class="create-form question-edit-form" *ngIf="resettingPasswordUser() as user" (ngSubmit)="submitPasswordReset()">
+        <h3>Nueva contraseña: {{ user.fullName }}</h3>
+        <p class="muted">La clave anterior dejará de funcionar. Comparte la nueva contraseña con el usuario.</p>
+        <label>Nueva contraseña<div class="password-input"><input class="control" name="resetPasswordValue" required minlength="1" maxlength="72" [type]="showResetPassword() ? 'text' : 'password'" [(ngModel)]="resetPasswordValue"><button class="password-toggle" type="button" (click)="showResetPassword.update(value => !value)">{{ showResetPassword() ? 'Ocultar' : 'Mostrar' }}</button></div></label>
+        <div class="modal-actions"><button class="button button-secondary" type="button" (click)="resettingPasswordUser.set(null)">Cancelar</button>
+          <button *ngIf="user.role === 'SOLICITANTE'" class="button button-secondary" type="button" [disabled]="saving()" (click)="resetPasswordToIdentification()">Usar cédula</button>
+          <button class="button button-primary" type="submit" [disabled]="saving() || !resetPasswordValue">{{ saving() ? 'Guardando…' : 'Guardar contraseña' }}</button></div>
+      </form>
+      <h3>Cuentas existentes</h3>
+      <div class="user-list-row" *ngFor="let user of users()"><strong>{{ user.fullName }}</strong><span>{{ user.username }}</span><span>{{ user.role === 'TALENTO_HUMANO' ? 'Talento Humano' : user.role === 'SOLICITANTE' ? 'Solicitante' : user.area === 'DIRECCION_UNIDAD' ? 'Director de unidad' : 'Responsable de ' + areaName(user.area || '') }}{{ user.workUnit ? ' · ' + user.workUnit : '' }}</span><span>{{ user.questionKeys.length }} preguntas asignadas</span>
+        <span class="status-pill" [class.status-pill-muted]="!user.enabled">{{ user.enabled ? 'Activa' : 'Desactivada' }}</span>
+        <div class="user-actions"><button class="button button-secondary" type="button" (click)="editUserProfile(user)">Editar datos</button>
+          <button *ngIf="user.role === 'RESPONSABLE_AREA'" class="button button-secondary" type="button" (click)="editUserQuestions(user)">Editar preguntas</button>
+          <button class="button button-secondary" type="button" [disabled]="saving()" (click)="toggleUserEnabled(user)">{{ user.enabled ? 'Desactivar' : 'Activar' }}</button>
+          <button class="button button-secondary" type="button" [disabled]="saving()" (click)="resetUserPassword(user)">Restablecer contraseña</button>
+          <button class="button button-danger" type="button" [disabled]="saving()" (click)="deleteUser(user)">Eliminar</button></div></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="showCreate()">
+    <section class="modal-card" role="dialog" aria-modal="true" aria-labelledby="createTitle" (click)="$event.stopPropagation()">
+      <div class="modal-heading"><div><p class="eyebrow">NUEVO TRÁMITE</p><h2 id="createTitle">Registrar servidor saliente</h2></div>
+        <button class="icon-button" type="button" aria-label="Cerrar" (click)="showCreate.set(false)">×</button></div>
+        <p class="muted">Registra los datos personales y las credenciales de seguimiento. El director de la unidad completará los datos laborales; cada área atenderá las preguntas que Talento Humano le asignó.</p>
+      <div class="notice notice-error assignment-warning" *ngIf="unassignedQuestionLabels().length">
+        <strong>No se puede crear todavía: faltan responsables para {{ unassignedQuestionLabels().length }} preguntas.</strong>
+        <p>Completa las asignaciones de todas las áreas. El solicitante recibirá las credenciales ingresadas aquí.</p>
+        <button class="button button-secondary" type="button" (click)="openUserAdminFromRequest()">Ir a administrar usuarios</button>
+      </div>
+      <form class="create-form" #createForm="ngForm" (ngSubmit)="createRequest()">
+        <h3>01. Datos personales del servidor saliente</h3>
+        <label>Nombre y apellidos<input class="control" name="fullName" required maxlength="100" pattern="[A-Za-zÁÉÍÓÚÜÑáéíóúüñ .'-]+" [(ngModel)]="fullName"></label>
+        <label>Cédula<input class="control" name="identification" required type="text" inputmode="numeric" pattern="[0-9]{1,10}" maxlength="10" minlength="1" title="Ingresa solo números, máximo 10 dígitos" [ngModel]="identification" (ngModelChange)="onIdentificationChange($event)"><small>Solo números, máximo 10 dígitos.</small></label>
+        <label>Correo electrónico<input class="control" name="email" type="email" required [(ngModel)]="email"></label>
+        <label>Correo electrónico alternativo<input class="control" name="secondaryEmail" type="email" required [(ngModel)]="secondaryEmail"></label>
+        <label>Modalidad laboral<select class="control" name="employmentType" required [(ngModel)]="employmentType"><option value="">Selecciona modalidad</option><option *ngFor="let type of employmentTypes" [value]="type">{{ type }}</option></select></label>
+        <div class="form-two-columns"><label>Fecha de ingreso<input class="control" name="startDate" type="date" required [(ngModel)]="startDate"></label>
+          <label>Fecha de salida<input class="control" name="departureDate" type="date" required [min]="startDate" [(ngModel)]="departureDate"></label></div>
+        <label>Dirección domiciliaria<input class="control" name="homeAddress" required [(ngModel)]="homeAddress"></label>
+        <div class="form-two-columns"><label>Número de domicilio<input class="control" name="homePhone" type="tel" inputmode="numeric" pattern="[0-9]{1,10}" maxlength="10" required [(ngModel)]="homePhone"><small>Solo números, máximo 10 dígitos.</small></label>
+          <label>Número celular<input class="control" name="mobilePhone" type="tel" inputmode="numeric" pattern="[0-9]{1,10}" maxlength="10" required [(ngModel)]="mobilePhone"><small>Solo números, máximo 10 dígitos.</small></label></div>
+        <div class="form-two-columns"><label>Provincia<input class="control" name="province" required [(ngModel)]="province"></label>
+          <label>Cantón<input class="control" name="canton" required [(ngModel)]="canton"></label></div>
+        <label>Contacto de emergencia<input class="control" name="emergencyContact" type="tel" inputmode="numeric" pattern="[0-9]{1,10}" maxlength="10" required [(ngModel)]="emergencyContact"><small>Solo números, máximo 10 dígitos.</small></label>
+        <h3>02. Responsable inicial</h3>
+        <div class="notice notice-error" *ngIf="!directionManagers.length"><strong>No hay responsables activos de Dirección / unidad.</strong><p>Talento Humano debe crear una cuenta de responsable para esta área antes de iniciar solicitudes.</p><button class="button button-secondary" type="button" (click)="openUserAdminFromRequest()">Administrar usuarios</button></div>
+        <label>Responsable de Dirección / unidad<select class="control" name="directionResponsibleId" required [(ngModel)]="directionResponsibleId"><option value="">Selecciona responsable</option><option *ngFor="let manager of directionManagers" [value]="manager.id">{{ manager.fullName }} · {{ manager.workUnit }}</option></select><small>La persona seleccionada completará el lugar de trabajo, grupo ocupacional, unidad y cargo.</small></label>
+        <h3>Acceso del solicitante</h3>
+        <p class="muted">Esta cuenta solo podrá consultar el estado y avance de esta solicitud.</p>
+        <label>Usuario<input class="control" name="trackingUsername" required minlength="3" maxlength="60" pattern="[a-zA-Z0-9._-]{3,60}" [(ngModel)]="trackingUsername"><small>Se propone un usuario basado en la cédula; puedes cambiarlo.</small></label>
+        <label>Contraseña inicial (por defecto, la cédula)<div class="password-input"><input class="control" name="trackingPassword" required minlength="1" maxlength="72" [type]="showTrackingPassword() ? 'text' : 'password'" [(ngModel)]="trackingPassword"><button class="password-toggle" type="button" (click)="showTrackingPassword.update(value => !value)">{{ showTrackingPassword() ? 'Ocultar' : 'Mostrar' }}</button><button class="button button-secondary" type="button" (click)="generateTrackingPassword()">Generar otra</button></div><small>Al ingresar la cédula, se usará como contraseña inicial. Puedes cambiarla antes de crear.</small></label>
+        <div class="modal-actions"><button class="button button-secondary" type="button" (click)="showCreate.set(false)">Cancelar</button>
+          <button class="button button-primary" type="submit" [disabled]="createForm.invalid || !directionResponsibleId || saving() || checkingQuestionAssignments() || unassignedQuestionLabels().length > 0">{{ checkingQuestionAssignments() ? 'Verificando responsables…' : saving() ? 'Creando…' : 'Crear solicitud' }}</button></div>
+      </form>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="credentials() as access" (click)="credentials.set(null)">
+    <section class="modal-card credential-modal" role="dialog" aria-modal="true" aria-labelledby="credentialTitle" (click)="$event.stopPropagation()">
+      <div class="modal-heading"><div><p class="eyebrow">CREDENCIALES</p><h2 id="credentialTitle">{{ access.title }}</h2></div></div>
+      <p class="muted">Guarda y entrega estos datos ahora. La contraseña temporal solo se muestra en esta ventana.</p>
+      <label>Usuario<input class="control" readonly [value]="access.username"></label>
+      <label>Contraseña<div class="password-input"><input class="control" readonly [type]="showCredentialPassword() ? 'text' : 'password'" [value]="access.password"><button class="password-toggle" type="button" (click)="showCredentialPassword.update(value => !value)">{{ showCredentialPassword() ? 'Ocultar' : 'Mostrar' }}</button></div></label>
+      <div class="modal-actions"><button class="button button-primary" type="button" (click)="credentials.set(null)">Listo</button></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" *ngIf="showAudit()" (click)="showAudit.set(false)">
+    <section class="modal-card audit-modal" role="dialog" aria-modal="true" aria-labelledby="auditTitle" (click)="$event.stopPropagation()">
+      <div class="modal-heading"><div><p class="eyebrow">TRAZABILIDAD</p><h2 id="auditTitle">Historial de actividad</h2></div>
+        <button class="icon-button" type="button" aria-label="Cerrar" (click)="showAudit.set(false)">×</button></div>
+      <div class="audit-entry" *ngFor="let entry of auditEntries">
+        <span class="audit-dot"></span><div><strong>{{ entry.action.replaceAll('_', ' ') }}</strong>
+          <p>{{ entry.details }}</p><small>{{ entry.actor }} · {{ entry.occurredAt | date:'medium' }}</small></div>
+      </div>
+      <p class="muted" *ngIf="auditEntries.length === 0">No hay acciones registradas.</p>
+    </section>
+  </div>
+
+  <footer class="footer"><span>Sistema de Gestión de Paz y Salvo Institucional</span><span>Versión de prácticas 0.1</span></footer>
+</div>
